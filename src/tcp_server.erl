@@ -1,65 +1,50 @@
-
 -module(tcp_server).
--author('zeb <zebbey@gmail.com>').
--vsn('1.0.0').
-
--include("tcp_server.hrl"). 
+-author("zeb <zebbey@gmail.com>").
+-vsn("1.0.0").
 -behaviour(gen_server).
+
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([accept_loop/1]).
 
--export([start_link/3]).
+-export([start_link/1]).
 
--define(TCP_OPTIONS, [binary, {packet, 0}, {active, once}, {reuseaddr, true}]).
+-record(conn_state, {lsocket, socket, addr}).
 
--record(conn_state, {port, loop, ip = any, lsocket = null}).
+start_link(LSocket) ->
+    State = #conn_state{lsocket = LSocket},
+    gen_server:start_link(?MODULE, State, []).
 
-%%---------------------------
-%% interface
-%%---------------------------
-start_link(Name, Port, Loop) ->
-    State = #conn_state{port = Port, loop = Loop},
-    gen_server:start_link({local, Name}, ?MODULE, State, []).
-
-%%---------------------------
-%% callbacks
-%%---------------------------
-init(State = #conn_state{port = Port}) ->
-    case gen_tcp:listen(Port, ?TCP_OPTIONS) of
-	{ok, LSocket} ->
-	    NewState = State#conn_state{lsocket = LSocket},
-	    {ok, accept(NewState)};
-	{error, Reason} ->
-	    {stop, Reason}
-    end.
-
-handle_cast({accepted, _Pid}, State = #conn_state{}) ->
-    {noreply, accept(State)}.
+init(#conn_state{lsocket = LSocket}) ->
+    {ok, #conn_state{lsocket = LSocket}, 0}.
 
 handle_call(_Msg, _From, State) ->
     {noreply, State}.
 
+handle_cast(stop, State) ->
+    {stop, normal, State}.
+
+handle_info({tcp, Socket, Msg}, State) ->
+    inet:setopts(Socket, [{active, once}]),
+    gen_tcp:send(Socket, Msg),
+    {noreply, State};
+
+handle_info({tcp_closed, _Socket}, State) ->
+    {stop, normal, State};
+
+handle_info(timeout, #conn_state{lsocket = LSocket} = State) ->
+    {ok, Socket} = gen_tcp:accept(LSocket),
+    {ok, {IP, _Port}} = inet:peername(Socket),
+    gate_server_sup:start_child(),
+    {noreply, State#conn_state{socket = Socket, addr = IP}};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #conn_state{socket = Socket}) ->
+    (catch gen_tcp:close(Socket)),
     ok.
 
-code_change(_OldVer, State, _Extra) ->
+code_change(_OldVersion, State, _Extra) ->
     {ok, State}.
 
-%%---------------------------
-%% private
-%%---------------------------
-accept_loop({Pid, LSocket, {Mod, Loop}}) ->
-    case gen_tcp:accept(LSocket) of
-	{ok, Socket} ->
-	    gen_server:cast(Pid, {accepted, self()}),
-	    Mod:Loop(Socket);
-	{error, Reason} ->
-	    io:format('accept error: ~p~n', [Reason])
-    end.
+    
 
-accept(State = #conn_state{lsocket = LSocket, loop = Loop}) ->
-    spawn(?MODULE, accept_loop, [{self(), LSocket, Loop}]),
-    State.
