@@ -2,9 +2,9 @@
 -author("zebbey@gmail.com").
 -behaviour(application).
 
--export([start/2, stop/1]).
+-include("tcp_server.hrl").
 
--define(TCP_OPTIONS, [binary, {packet, 0}, {active, once}, {reuseaddr, true}]).
+-export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
     ListenPort = get_app_env(listen_port, 7878),
