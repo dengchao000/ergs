@@ -1,0 +1,14 @@
+{
+  application, ergs, [
+    {description, "erlang gate server"},
+    {vsn, "1"},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {mod, {ergs_app, []}},
+    {env, [
+        {port, 1234},
+        {listen_num, 10}
+      ]
+    }
+  ]
+}.
